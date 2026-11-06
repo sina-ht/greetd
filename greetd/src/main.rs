@@ -41,7 +41,14 @@ async fn main() {
     if cfg!(feature = "debug") {
         eprintln!("config: {:?}", config);
     }
-    mlockall(MlockAllFlags::all()).expect("unable to lock pages");
+    // The session worker must be able to make MAP_LOCKED allocations as the
+    // unprivileged target user (e.g. via pam modules such as pam_fscrypt).
+    // As root, mlockall() would succeed despite exceeding RLIMIT_MEMLOCK, but
+    // the kernel then refuses further MAP_LOCKED allocations from the dropped
+    // privileges as mm->locked_vm already covers the entire address space.
+    if config.internal.session_worker == 0 {
+        mlockall(MlockAllFlags::all()).expect("unable to lock pages");
+    }
     let res = task::LocalSet::new()
         .run_until(async move {
             if config.internal.session_worker > 0 {
